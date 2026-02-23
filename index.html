@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>无人机路径规划算法对比沙盘</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Graduate Sandbox</p>
+          <h1>无人机路径规划算法对比沙盘</h1>
+          <p class="subtitle">A* + 贪心任务分配 vs A* 基线（非贪心分配）</p>
+        </div>
+        <div class="status-block">
+          <span id="sim-state" class="pill">已暂停</span>
+          <span id="param-summary" class="mono">点位=3 载荷=2</span>
+          <span id="sim-time" class="mono">t = 0.0s</span>
+        </div>
+      </header>
+
+      <section class="controls panel">
+        <div class="control-group">
+          <button id="start-btn" class="action primary">开始</button>
+          <button id="pause-btn" class="action">暂停</button>
+          <button id="reset-btn" class="action ghost">重置</button>
+          <button id="check-btn" class="action">结果检查</button>
+          <button id="sweep-btn" class="action">载荷分析</button>
+        </div>
+        <div class="control-group">
+          <label>
+            随机种子
+            <input id="seed-input" type="number" value="42" min="1" step="1" />
+          </label>
+          <label>
+            任务间隔 (s)
+            <input id="interval-input" type="number" value="4" min="1" max="20" step="1" />
+          </label>
+          <label>
+            任务点数量 (配送点)
+            <input id="site-count-input" type="number" value="3" min="3" max="8" step="1" />
+          </label>
+          <label>
+            载荷上限 (任务/机)
+            <input id="payload-input" type="number" value="2" min="1" max="12" step="1" />
+          </label>
+          <label>
+            速度倍数
+            <input id="speed-input" type="range" min="0.5" max="5" step="0.5" value="1.5" />
+            <span id="speed-label" class="mono">1.5x</span>
+          </label>
+        </div>
+        <div class="param-strip mono">
+          当前生效参数：
+          任务点数量 <strong id="current-site-count">3</strong>
+          |
+          载荷上限 <strong id="current-payload-capacity">2</strong>
+        </div>
+      </section>
+
+      <section class="panel compare-panel">
+        <div class="panel-head">
+          <h2>并列沙盘对比</h2>
+          <button id="toggle-compare" class="panel-toggle" type="button" aria-expanded="true" aria-controls="compare-body">收起</button>
+        </div>
+        <div id="compare-body" class="panel-body">
+          <div class="map-grid">
+            <article class="map-card">
+              <h3>A* + 贪心任务分配</h3>
+              <canvas id="map-canvas-astar" width="960" height="560" aria-label="A* 贪心沙盘"></canvas>
+            </article>
+            <article class="map-card">
+              <h3>A* 基线任务调度</h3>
+              <canvas id="map-canvas-mappo" width="960" height="560" aria-label="A* 基线沙盘"></canvas>
+            </article>
+          </div>
+          <div class="legend">
+            <span><i class="dot drone-0"></i> 无人机 1</span>
+            <span><i class="dot drone-1"></i> 无人机 2</span>
+            <span><i class="dot task"></i> 待配送任务</span>
+            <span><i class="dot obstacle"></i> 障碍物</span>
+            <span><i class="dot site"></i> 配送点位</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel metrics-panel">
+        <div class="panel-head">
+          <h2>关键指标</h2>
+          <button id="toggle-metrics" class="panel-toggle" type="button" aria-expanded="true" aria-controls="metrics-body">收起</button>
+        </div>
+        <div id="metrics-body" class="panel-body">
+          <div class="metric-columns">
+            <article class="metric-card" id="card-astar">
+              <h3>A* + 贪心</h3>
+              <ul>
+                <li>平均完成时长：<strong data-metric="avg-completion">-</strong></li>
+                <li>总路程：<strong data-metric="distance">-</strong></li>
+                <li>任务完成率：<strong data-metric="completion-rate">-</strong></li>
+                <li>平均等待时长：<strong data-metric="avg-wait">-</strong></li>
+                <li>累计完成任务：<strong data-metric="completed">-</strong></li>
+              </ul>
+            </article>
+            <article class="metric-card" id="card-mappo">
+              <h3>A* 基线</h3>
+              <ul>
+                <li>平均完成时长：<strong data-metric="avg-completion">-</strong></li>
+                <li>总路程：<strong data-metric="distance">-</strong></li>
+                <li>任务完成率：<strong data-metric="completion-rate">-</strong></li>
+                <li>平均等待时长：<strong data-metric="avg-wait">-</strong></li>
+                <li>累计完成任务：<strong data-metric="completed">-</strong></li>
+              </ul>
+            </article>
+          </div>
+          <div class="insight" id="insight-text">等待仿真开始...</div>
+        </div>
+      </section>
+
+      <section class="panel behavior-panel">
+        <div class="panel-head">
+          <h2>行为差异看板（决策 -> 行为 -> 结果）</h2>
+          <button id="toggle-behavior" class="panel-toggle" type="button" aria-expanded="true" aria-controls="behavior-body">收起</button>
+        </div>
+        <div id="behavior-body" class="panel-body">
+          <div class="behavior-grid">
+            <article class="behavior-card">
+              <h3>A* + 贪心 决策拆解</h3>
+              <div class="mini-title">当前批次队列</div>
+              <div id="astar-batch-view" class="mono small-log">等待数据...</div>
+              <div class="mini-title">最近决策（含评分拆解）</div>
+              <pre id="astar-decision-log" class="small-log">等待数据...</pre>
+              <div class="mini-title">事件时间轴（含结果指标）</div>
+              <pre id="astar-event-log" class="small-log">等待数据...</pre>
+            </article>
+            <article class="behavior-card">
+              <h3>A* 基线 决策拆解</h3>
+              <div class="mini-title">当前批次队列</div>
+              <div id="mappo-batch-view" class="mono small-log">等待数据...</div>
+              <div class="mini-title">最近决策（含策略分数）</div>
+              <pre id="mappo-decision-log" class="small-log">等待数据...</pre>
+              <div class="mini-title">事件时间轴（含结果指标）</div>
+              <pre id="mappo-event-log" class="small-log">等待数据...</pre>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel charts-panel">
+        <div class="panel-head">
+          <h2>时序对比图</h2>
+          <button id="toggle-charts" class="panel-toggle" type="button" aria-expanded="true" aria-controls="charts-body">收起</button>
+        </div>
+        <div id="charts-body" class="panel-body">
+          <div class="chart-grid">
+            <figure>
+              <figcaption>累计完成任务数</figcaption>
+              <canvas id="chart-completed" width="520" height="220"></canvas>
+            </figure>
+            <figure>
+              <figcaption>平均等待时长 (s)</figcaption>
+              <canvas id="chart-wait" width="520" height="220"></canvas>
+            </figure>
+            <figure>
+              <figcaption>批次决策-结果散点（x: 预估路程 / y: 批次完成时长）</figcaption>
+              <canvas id="chart-scatter" width="520" height="220"></canvas>
+            </figure>
+            <figure>
+              <figcaption>事件甘特图（最近 60s）</figcaption>
+              <canvas id="chart-gantt" width="520" height="220"></canvas>
+            </figure>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
